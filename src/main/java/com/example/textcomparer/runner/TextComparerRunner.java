@@ -9,10 +9,8 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 public class TextComparerRunner implements CommandLineRunner {
@@ -56,21 +54,26 @@ public class TextComparerRunner implements CommandLineRunner {
 
         System.out.println("Found " + poolFiles.length + " files in pool directory\n");
 
-        // Calculate scores for each file
-        List<FileScore> scores = new ArrayList<>();
+        // Process files in parallel for better performance
+        List<FileScore> scores = Arrays.stream(poolFiles)
+                .parallel() // Parallel processing for multiple files
+                .map(file -> {
+                    try {
+                        Map<String, Integer> fileWords = fileReaderService.readFileWords(file.getAbsolutePath());
+                        double score = similarityService.calculateSimilarityScore(referenceWords, fileWords);
 
-        for (File file : poolFiles) {
-            try {
-                Map<String, Integer> fileWords = fileReaderService.readFileWords(file.getAbsolutePath());
-                double score = similarityService.calculateSimilarityScore(referenceWords, fileWords);
-                scores.add(new FileScore(file.getName(), score));
+                        System.out.println("Processed: " + file.getName() +
+                                " (" + fileWords.size() + " unique words)");
 
-                System.out.println("Processed: " + file.getName() +
-                        " (" + fileWords.size() + " unique words)");
-            } catch (IOException e) {
-                System.err.println("Error reading file " + file.getName() + ": " + e.getMessage());
-            }
-        }
+                        return new FileScore(file.getName(), score);
+                    } catch (IOException e) {
+                        System.err.println("Error reading file " + file.getName() + ": " + e.getMessage());
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .sorted() // FileScore implements Comparable
+                .collect(Collectors.toList());
 
         // Sort scores (highest first)
         Collections.sort(scores);
